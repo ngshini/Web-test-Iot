@@ -1,5 +1,7 @@
 # Kích hoạt CI/CD
 
+Deploy chỉ chạy khi repository variable `CD_ENABLED=true`. Chỉ bật sau khi đã thu hồi credential Tailscale từng lộ trong chat, thay Secrets mới và hoàn tất script/SSH key trên server. Khi chưa bật, CI vẫn chạy, job deploy được skip.
+
 Workflow chạy test trên pull request và push; chỉ main được deploy. Không chạy mã pull request trên Ubuntu. GitHub runner đi qua Tailscale, dùng SSH key riêng với forced command. Repo public nên không đặt runner trên server BAS.
 
 ## 1. Tailscale (cần chủ tài khoản)

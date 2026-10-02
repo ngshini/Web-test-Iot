@@ -20,7 +20,7 @@ jobs:
       - run: node --test *.test.mjs tests/*.test.mjs
       - run: bash -n deploy/server-deploy.sh
   deploy:
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.CD_ENABLED == 'true'
     needs: test
     environment: production
     runs-on: ubuntu-latest
