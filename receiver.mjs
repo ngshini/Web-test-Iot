@@ -3,11 +3,19 @@ export const BROKERS=Object.freeze({mosquitto:'wss://test.mosquitto.org:8081/mqt
 // Browser-only, read-only subscriptions. Never routes arbitrary hosts through BAS.
 export class MqttReceiver {
  constructor({Socket=globalThis.WebSocket,onState=()=>{},onMessage=()=>{}}={}){Object.assign(this,{Socket,onState,onMessage});this.ws=null;}
- stop(){clearInterval(this.ping);clearTimeout(this.deadline);const s=this.ws;this.ws=null;if(s){if(s.readyState===1)s.send(new Uint8Array([224,0]));s.close();}this.onState('disconnected');}
+ stop(){clearInterval(this.ping);clearTimeout(this.deadline);if(this.events){this.events.close();this.events=null;}const s=this.ws;this.ws=null;if(s){if(s.readyState===1)s.send(new Uint8Array([224,0]));s.close();}this.onState('disconnected');}
  connect(broker,topics){
   if(!Object.hasOwn(BROKERS,broker))throw Error('Chọn broker trong danh sách.');
   topics=[...new Set(topics)];
   if(!topics.length||topics.some(t=>!t||t.includes('\0')||new TextEncoder().encode(t).length>1024||t.split('/').some((p,i,a)=>(p.includes('#')&&(p!=='#'||i!==a.length-1))||(p.includes('+')&&p!=='+'))))throw Error('Topic không hợp lệ.');
+  if(broker==='mosquitto'&&globalThis.location?.hostname==='server.aitrg.io.vn'){
+   if(topics.length!==1||topics[0]!=='bas/BAS_TEST_001/telemetry')throw Error('Relay NB-IoT hiện chỉ nhận bas/BAS_TEST_001/telemetry.');
+   this.stop();this.onState('connecting');const e=this.events=new EventSource('/iot-test/events');
+   e.addEventListener('status',event=>{if(e!==this.events)return;const s=JSON.parse(event.data);this.onState(s.connected?'connected':'connecting');});
+   e.addEventListener('telemetry',event=>{if(e===this.events)this.onMessage(JSON.parse(event.data));});
+   e.onerror=()=>{if(e===this.events)this.onState('connecting','Relay đang kết nối lại.');};
+   return;
+  }
   this.stop();const s=this.ws=new this.Socket(BROKERS[broker],'mqtt');s.binaryType='arraybuffer';let remainder=new Uint8Array(),lastSeen=Date.now();
   const fail=message=>{if(s!==this.ws)return;this.stop();this.onState('error',message);};
   this.onState('connecting');this.deadline=setTimeout(()=>fail('Hết thời gian kết nối. Kiểm tra mạng và thử lại.'),20000);

@@ -10,34 +10,11 @@ import {
   validateBasTelemetry,
 } from './mqtt_core.mjs'
 
-const repoRoot = new URL('../../', import.meta.url)
-
-test('firmware default and local receiver retain encrypted EMQX support', () => {
-  const config = readFileSync(new URL('firmware/bas_mqtts/config.h', repoRoot), 'utf8')
-  const value = key => config.match(new RegExp('^#define ' + key + ' (.+)$', 'm'))?.[1].trim()
-  assert.equal(value('MQTT_HOST'), '"broker.emqx.io"')
-  assert.equal(value('NB_MQTT_HOST'), value('MQTT_HOST'))
-  assert.equal(value('NB_MQTT_TLS'), '1')
-  assert.equal(value('NB_MQTT_PORT'), '8883')
-  for (const path of ['windows/bas_receive_test/receiver.mjs', 'windows/bas_monitor/index.html']) {
-    const page = readFileSync(new URL(path, repoRoot), 'utf8')
-    assert.ok(page.includes('wss://broker.emqx.io:8084/mqtt'))
-  }
-})
-
-test('waits for an unfinished modem connection before releasing its client', () => {
-  const nbiot = readFileSync(new URL('firmware/bas_mqtts/nbiot.cpp', repoRoot), 'utf8')
-  assert.match(nbiot, /waitPendingMqttConnect\(70000\)/)
-  assert.match(nbiot, /if \(disc == RESULT_ERROR \|\| disc == RESULT_TIMEOUT\)/)
-})
-
-test('advances the reconnect backoff exactly once per failed attempt', () => {
-  const nbiot = readFileSync(new URL('firmware/bas_mqtts/nbiot.cpp', repoRoot), 'utf8')
-  const start = nbiot.indexOf('static void scheduleRetry()')
-  const end = nbiot.indexOf('void nbBridgeLoop()', start)
-  const schedule = nbiot.slice(start, end)
-
-  assert.equal((schedule.match(/backoffIndex\+\+/g) ?? []).length, 1)
+// Firmware integration assertions belong to the original firmware repository.
+// This standalone web repository must not depend on private config.h outside it.
+test('local receiver retains encrypted EMQX support', () => {
+  const page=readFileSync(new URL('./receiver.mjs',import.meta.url),'utf8')
+  assert.ok(page.includes('wss://broker.emqx.io:8084/mqtt'))
 })
 
 test('accepts a complete BAS telemetry payload', () => {

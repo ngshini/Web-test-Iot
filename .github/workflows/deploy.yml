@@ -1,0 +1,57 @@
+name: Test and deploy IoT web
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: iot-web-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test *.test.mjs tests/*.test.mjs
+      - run: bash -n deploy/server-deploy.sh
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: test
+    environment: production
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check secrets
+        env:
+          TS_CLIENT: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          TS_SECRET: ${{ secrets.TS_OAUTH_SECRET }}
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          HOST_KEY: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          for name in TS_CLIENT TS_SECRET SSH_KEY HOST_KEY; do
+            test -n "${!name}" || { echo "Missing secret: $name"; exit 1; }
+          done
+      - uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:iot-web-ci
+      - name: Package static files only
+        run: tar -czf /tmp/iot-web.tar.gz index.html styles.css receiver-ui.css receiver.mjs mqtt_core.mjs src/app.js src/geometry.js src/telemetry.mjs
+      - name: Deploy using restricted SSH key
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          HOST_KEY: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/iot_deploy
+          chmod 600 ~/.ssh/iot_deploy
+          printf '%s\n' "$HOST_KEY" > ~/.ssh/known_hosts
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=20 -i ~/.ssh/iot_deploy croz@100.70.65.27 < /tmp/iot-web.tar.gz
+      - name: Check public page
+        run: curl --fail --retry 3 --max-time 20 https://server.aitrg.io.vn/iot-test/ -o /dev/null
