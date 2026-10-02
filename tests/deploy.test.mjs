@@ -6,6 +6,7 @@ test('CI deploys only main and preserves public SSE receiver', () => {
  const workflow=readFileSync(new URL('../.github/workflows/deploy.yml', import.meta.url),'utf8');
  assert.match(workflow,/branches: \[main\]/);
  assert.match(workflow,/needs: test/);
+ assert.ok(workflow.includes("vars.CD_ENABLED == 'true'"));
  assert.match(workflow,/cancel-in-progress: false/);
  assert.match(readFileSync(new URL('../receiver.mjs',import.meta.url),'utf8'),/\/iot-test\/events/);
 });
