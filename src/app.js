@@ -188,7 +188,7 @@ function acceptTelemetry(item){
    const channel=key==='distance2'||isSecond?1:0;liveKit.values[channel]=value;liveDistanceTimes[channel]=item.retained?0:timestamp-parsed.ageMs;
   }else {liveReadings[key]=value;liveTimes[key]=item.retained?0:timestamp-parsed.ageMs;}
  }
- for(const [key,update] of Object.entries(windUpdates(parsed,timestamp,item.retained))){liveReadings[key]=update.value;liveTimes[key]=update.time;}
+ for(const [key,update] of Object.entries(windUpdates(parsed,timestamp,item.retained,Date.now()))){liveReadings[key]=update.value;liveTimes[key]=update.time;}
  if(parsed.values.bowSpeed!==undefined){liveReadings.vesselSpeed=parsed.values.bowSpeed;liveTimes.vesselSpeed=item.retained?0:timestamp-parsed.ageMs;}
  // An invalid sample invalidates the relevant sensor rather than keeping it green.
  if(!parsed.valid){if(parsed.sensor==='TF03')liveDistanceTimes[isSecond?1:0]=0;if(parsed.sensor==='ES-WS-04')liveTimes.windDirection=0;}

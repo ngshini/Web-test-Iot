@@ -13,7 +13,7 @@ export function windDisplay(readings,times,now){
 }
 
 // Explicit nulls/errors must clear an old reading, not leave it looking live.
-export function windUpdates(parsed,timestamp,retained){
+export function windUpdates(parsed,timestamp,retained,receivedNow=timestamp){
  const p=parsed.raw,updates={};
  for(const [key,statusKey,ageKey] of [['windSpeed','speed_status','speed_age_ms'],['windDirection','direction_status','direction_age_ms']]){
   const relevant=Object.hasOwn(p,key)||(key==='windSpeed'&&(Object.hasOwn(p,'speed_mps')||parsed.sensor==='ES-WS-02'))||(key==='windDirection'&&parsed.sensor==='ES-WS-04');
@@ -21,7 +21,7 @@ export function windUpdates(parsed,timestamp,retained){
   const value=parsed.values[key]??null;
   const ok=parsed.valid&&(p[statusKey]===undefined||p[statusKey]==='ok')&&value!==null;
   const age=Number.isFinite(p[ageKey])&&p[ageKey]>=0?p[ageKey]:parsed.ageMs;
-  updates[key]={value:ok?value:null,time:ok&&!retained?timestamp-age:0};
+  updates[key]={value:ok?value:null,time:ok&&!retained?Math.min(timestamp,receivedNow)-age:0};
  }
  return updates;
 }
