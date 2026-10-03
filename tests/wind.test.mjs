@@ -2,6 +2,18 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {normalizeTelemetry, windDisplay, windUpdates} from '../src/telemetry.mjs';
 import {unwrapAngle} from '../src/geometry.js';
+import {readFileSync} from 'node:fs';
+
+test('wind page has one combined tab, legacy links and motion controls', () => {
+ const html=readFileSync(new URL('../index.html',import.meta.url),'utf8');
+ const app=readFileSync(new URL('../src/app.js',import.meta.url),'utf8');
+ const css=readFileSync(new URL('../receiver-ui.css',import.meta.url),'utf8');
+ assert.match(html,/data-sensor="wind"/);
+ assert.doesNotMatch(html,/data-sensor="wind-speed"|data-sensor="wind-direction"/);
+ assert.match(app,/renderWindPage/); assert.match(app,/windUpdates\(parsed/);
+ assert.match(app,/wind-motion-toggle/); assert.match(app,/'wind-speed','wind-direction'/);
+ assert.match(css,/prefers-reduced-motion/); assert.match(css,/wind-stream/);
+});
 
 test('paired wind shows both measurements and a speed-driven animation', () => {
  const view=windDisplay({windSpeed:2,windDirection:336.7},{windSpeed:1000,windDirection:1000},2000);
