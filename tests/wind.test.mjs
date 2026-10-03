@@ -61,3 +61,11 @@ test('pair field status and ages invalidate the affected channel immediately', (
  assert.equal(windUpdates(normalizeTelemetry({speed_mps:1}),1000,false).windSpeed.value,1);
  assert.equal(windUpdates(normalizeTelemetry({sensor:'ES-WS-04',status:'timeout',angle:null}),1000,false).windDirection.time,0);
 });
+
+test('server clock ahead cannot hide a fresh sensor sample', () => {
+ const parsed=normalizeTelemetry({sensor:'wind-pair',status:'ok',windSpeed:1,windDirection:280,direction_age_ms:80,speed_age_ms:200});
+ const updates=windUpdates(parsed,1500,false,1000);
+ assert.equal(updates.windDirection.time,920);
+ assert.equal(updates.windSpeed.time,800);
+ assert.equal(windDisplay({windSpeed:1,windDirection:280},{windSpeed:updates.windSpeed.time,windDirection:updates.windDirection.time},1000).state,'complete');
+});
