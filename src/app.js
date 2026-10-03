@@ -1,7 +1,8 @@
-import {normalizeTelemetry} from './telemetry.mjs';
+import {normalizeTelemetry,windDisplay,windUpdates} from './telemetry.mjs';
 import {MqttReceiver} from '../receiver.mjs';
 import {flattenTelemetry} from '../mqtt_core.mjs';
-import {berthingAngle} from './geometry.js';
+import {berthingAngle,unwrapAngle} from './geometry.js';
+let windRotation=null,windMotion=true;
 let selected=null,range=30,activeSensor='distance',displayMode='combined';
 const liveMode=true;
 let liveSource='MQTT';
@@ -68,8 +69,62 @@ function renderEnvironment(){
 }
 
 
+function renderWindPage(page){
+ const view=windDisplay(liveReadings,liveTimes,Date.now());
+ // Keep the SVG in the DOM: telemetry updates must not restart its animation.
+ if(!page.querySelector('.wind-dashboard')){
+  const ticks=Array.from({length:72},(_,i)=>`<line x1="240" y1="${i%6===0?66:72}" x2="240" y2="${i%6===0?80:77}" transform="rotate(${i*5} 240 240)" class="${i%6===0?'major':'minor'}"/>`).join('');
+  const streams=Array.from({length:7},(_,i)=>`<path class="wind-stream" style="--delay:${-i*.7}s" d="M70 ${150+i*30}h${105+i%3*40}"/>`).join('');
+  page.innerHTML=`<div class="wind-dashboard">
+   <header class="wind-header"><div><div class="wind-eyebrow">TRẠM GIÓ / LIVE TELEMETRY</div><h2>Tốc độ & hướng gió</h2><p>Hai cảm biến. Một bộ dữ liệu.</p></div><span class="wind-status" role="status" id="wind-status"></span></header>
+   <div class="wind-layout"><div class="wind-readings">
+    <article class="wind-metric"><div class="wind-metric-top"><span>Tốc độ gió</span><span class="wind-channel">ES-WS-02</span></div><div class="wind-value"><strong id="wind-speed">—</strong><span>m/s</span></div><p class="wind-secondary" id="wind-kmh">Chờ số đo tốc độ</p><div class="wind-field-status" id="wind-speed-status"></div></article>
+    <article class="wind-metric direction"><div class="wind-metric-top"><span>Hướng gió</span><span class="wind-channel">ES-WS-04</span></div><div class="wind-value"><strong id="wind-angle">—</strong><span>°</span></div><p class="wind-secondary" id="wind-heading">Chờ hướng gió</p><div class="wind-field-status" id="wind-direction-status"></div></article>
+    <div class="wind-source"><span>Nguồn dữ liệu</span><strong id="wind-source"></strong><p>Số đo quá 10 giây sẽ ngừng hiển thị. Luồng gió là minh hoạ, không phải dự báo.</p></div>
+   </div><figure class="wind-visual">
+    <div class="wind-visual-top"><span>LA BÀN GIÓ</span><button type="button" id="wind-motion-toggle" aria-pressed="false">Tắt hiệu ứng</button></div>
+    <svg class="wind-compass" viewBox="0 0 480 480" role="img" aria-labelledby="wind-svg-title"><title id="wind-svg-title">Chờ dữ liệu gió</title>
+     <defs><radialGradient id="wind-sea"><stop stop-color="#173c4c"/><stop offset="1" stop-color="#0c202d"/></radialGradient><clipPath id="wind-flow-clip"><circle cx="240" cy="240" r="151"/></clipPath></defs>
+     <circle class="wind-outer-ring" cx="240" cy="240" r="207"/><circle cx="240" cy="240" r="180" fill="url(#wind-sea)"/>
+     <g class="wind-grid"><circle cx="240" cy="240" r="120"/><circle cx="240" cy="240" r="60"/><path d="M60 240h360M240 60v360"/></g>
+     <g class="wind-ticks">${ticks}</g>
+     <g clip-path="url(#wind-flow-clip)"><g id="wind-flow-rotation">${streams}</g></g>
+     <g class="wind-cardinals" text-anchor="middle"><text x="240" y="40">B</text><text x="442" y="247">Đ</text><text x="240" y="453">N</text><text x="38" y="247">T</text></g>
+     <g class="wind-diagonals" text-anchor="middle"><text x="384" y="103">ĐB</text><text x="384" y="388">ĐN</text><text x="96" y="388">TN</text><text x="96" y="103">TB</text></g>
+     <g id="wind-needle"><path d="M240 99L263 243 240 227 217 243Z" class="wind-needle-head"/><path d="M240 351L217 243 240 253 263 243Z" class="wind-needle-tail"/></g>
+     <circle cx="240" cy="240" r="14" class="wind-pivot"/><circle cx="240" cy="240" r="5" fill="#0c202d"/>
+    </svg><figcaption><strong id="wind-scene-caption">Chờ dữ liệu cảm biến</strong><span>Bắc = 0° · góc tăng theo chiều kim đồng hồ</span></figcaption>
+   </figure></div><div class="wind-footnote"><span id="wind-pair-note"></span><span>RS485 · MQTT</span></div>
+  </div>`;
+  page.querySelector('#wind-motion-toggle').addEventListener('click',()=>{windMotion=!windMotion;renderWindPage(page);});
+ }
+ const set=(id,text)=>{page.querySelector('#'+id).textContent=text;};
+ set('wind-speed',fmt(view.speed));set('wind-angle',fmt(view.angle));set('wind-heading',view.heading);
+ set('wind-kmh',view.speed===null?'Chờ số đo tốc độ':`${fmt(view.kmh)} km/h${view.speed===0?' · Lặng gió':''}`);
+ set('wind-source',liveSource==='JSON'?'JSON kiểm thử · không phải MQTT':'IoT / MQTT');
+ for(const [key,id,value] of [['windSpeed','wind-speed-status',view.speed],['windDirection','wind-direction-status',view.angle]]){
+  set(id,value===null?'Chưa có số đo mới':`Cập nhật ${time(new Date(liveTimes[key]))}`);
+  page.querySelector('#'+id).classList.toggle('unavailable',value===null);
+ }
+ set('wind-status',view.state==='complete'?'Đủ hai số đo':view.state==='partial'?'Thiếu một số đo':'Chờ dữ liệu');
+ page.querySelector('#wind-status').dataset.state=view.state;
+ set('wind-pair-note',view.state==='complete'?'Đang hiển thị đồng thời tốc độ và hướng gió.':'Kiểm tra nguồn cảm biến và topic nếu chưa nhận đủ hai số đo.');
+ set('wind-scene-caption',view.angle===null?'Chờ hướng gió':`${view.heading} · ${fmt(view.angle)}°`);
+ set('wind-svg-title',`Hướng gió ${view.angle===null?'chưa có dữ liệu':fmt(view.angle)+' độ'}, tốc độ ${view.speed===null?'chưa có dữ liệu':fmt(view.speed)+' mét trên giây'}`);
+ const needle=page.querySelector('#wind-needle');
+ needle.style.visibility=view.angle===null?'hidden':'visible';
+ windRotation=unwrapAngle(windRotation,view.angle);
+ needle.style.transform=`rotate(${windRotation??0}deg)`;
+ page.querySelector('#wind-flow-rotation').style.transform=`rotate(${(windRotation??0)+90}deg)`;
+ const scene=page.querySelector('.wind-visual');
+ scene.style.setProperty('--wind-duration',view.duration+'s');
+ scene.classList.toggle('is-moving',view.moving&&windMotion);
+ set('wind-motion-toggle',windMotion?'Tắt hiệu ứng':'Bật hiệu ứng');
+ page.querySelector('#wind-motion-toggle').setAttribute('aria-pressed',String(!windMotion));
+}
+
 function renderSensorPage(){
- const sensorNames={'distance':'Khoảng cách','wind-speed':'Tốc độ gió','wind-direction':'Hướng gió','water':'Mực nước','vessel-speed':'Vận tốc tàu'};
+ const sensorNames={'distance':'Khoảng cách',wind:'Gió · Tốc độ & hướng','wind-speed':'Tốc độ gió','wind-direction':'Hướng gió','water':'Mực nước','vessel-speed':'Vận tốc tàu'};
  // Sensor tests are independent of the distance kits.
  const types=['wind-speed','wind-direction','water','vessel-speed'];
  const index=types.indexOf(activeSensor),page=$('#single-sensor');
@@ -77,6 +132,7 @@ function renderSensorPage(){
  page.hidden=activeSensor==='distance';
  if(!document.body.classList.contains('devices-view')&&!document.body.classList.contains('history-view'))$('#page-title').textContent=activeSensor==='distance'?'Giám sát cập bến':'Test '+sensorNames[activeSensor].toLowerCase();
  document.body.classList.toggle('single-sensor-view',activeSensor!=='distance');
+ if(activeSensor==='wind'){renderWindPage(page);return;}
  if(index<0)return;
  const card=$('#environment').children[index].cloneNode(true);
  if(liveMode&&environmentValues()[['windSpeed','windDirection','waterLevel','vesselSpeed'][index]]==null)card.innerHTML='<p class="empty">Chưa có số đo mới cho cảm biến này.</p>';
@@ -105,9 +161,10 @@ document.querySelectorAll('[data-sensor]').forEach(button=>button.addEventListen
  document.title='Harbor Lab · '+sensorNamesForTitle(activeSensor);
 }));
 const initialSensor=location.hash.replace('#test/','');
-if(['wind-speed','wind-direction','water','vessel-speed'].includes(initialSensor))document.querySelector('[data-sensor="'+initialSensor+'"]').click();
+const initialTab=['wind-speed','wind-direction'].includes(initialSensor)?'wind':initialSensor;
+if(['wind','water','vessel-speed'].includes(initialTab))document.querySelector('[data-sensor="'+initialTab+'"]').click();
 
-function sensorNamesForTitle(type){return {distance:"Khoảng cách","wind-speed":"Tốc độ gió","wind-direction":"Hướng gió",water:"Mực nước","vessel-speed":"Vận tốc tàu"}[type];}
+function sensorNamesForTitle(type){return {distance:"Khoảng cách",wind:"Gió · Tốc độ & hướng","wind-speed":"Tốc độ gió","wind-direction":"Hướng gió",water:"Mực nước","vessel-speed":"Vận tốc tàu"}[type];}
 
 document.querySelectorAll('[data-display]').forEach(button=>button.addEventListener('click',()=>{
  displayMode=button.dataset.display;
@@ -131,6 +188,7 @@ function acceptTelemetry(item){
    const channel=key==='distance2'||isSecond?1:0;liveKit.values[channel]=value;liveDistanceTimes[channel]=item.retained?0:timestamp-parsed.ageMs;
   }else {liveReadings[key]=value;liveTimes[key]=item.retained?0:timestamp-parsed.ageMs;}
  }
+ for(const [key,update] of Object.entries(windUpdates(parsed,timestamp,item.retained))){liveReadings[key]=update.value;liveTimes[key]=update.time;}
  if(parsed.values.bowSpeed!==undefined){liveReadings.vesselSpeed=parsed.values.bowSpeed;liveTimes.vesselSpeed=item.retained?0:timestamp-parsed.ageMs;}
  // An invalid sample invalidates the relevant sensor rather than keeping it green.
  if(!parsed.valid){if(parsed.sensor==='TF03')liveDistanceTimes[isSecond?1:0]=0;if(parsed.sensor==='ES-WS-04')liveTimes.windDirection=0;}
@@ -149,6 +207,7 @@ function recordRaw(item){
  $('#raw-history').innerHTML='<table><thead><tr><th>Giờ</th><th>Topic</th><th>Payload</th></tr></thead><tbody>'+rawMessages.slice().reverse().map(m=>'<tr><td>'+time(new Date(m.received_ms))+'</td><td>'+escapeText(m.topic)+'</td><td>'+escapeText(m.payload)+'</td></tr>').join('')+'</tbody></table>';
 }
 function resetReadings(){
+ windRotation=null;
  for(const key of Object.keys(liveTimes))delete liveTimes[key];
  for(const key of Object.keys(liveReadings))delete liveReadings[key];
  liveDistanceTimes.fill(0);liveKit.values=[null,null];liveHistory.length=0;
